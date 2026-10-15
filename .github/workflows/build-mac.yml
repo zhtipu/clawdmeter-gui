@@ -44,10 +44,31 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           QT_QUICK_BACKEND: software
+          SHOT: ${{ runner.temp }}/shots/built-app.png
         run: |
           mkdir -p "${{ runner.temp }}/shots"
-          timeout 90 dist/Clawdmeter.app/Contents/MacOS/Clawdmeter --page 0 --shot "${{ runner.temp }}/shots/built-app.png" --delay 5000
-          test -s "${{ runner.temp }}/shots/built-app.png"
+          python - <<'PY'
+          import os, subprocess, sys
+          exe = "dist/Clawdmeter.app/Contents/MacOS/Clawdmeter"
+          shot = os.environ["SHOT"]
+          try:
+              p = subprocess.run([exe, "--page", "0", "--shot", shot, "--delay", "5000"],
+                                 capture_output=True, text=True, timeout=120)
+          except subprocess.TimeoutExpired:
+              print("::error::The built app did not finish within 120 seconds")
+              sys.exit(1)
+          except OSError as e:
+              print("::error::Could not start the built app: " + str(e))
+              sys.exit(1)
+          out = ((p.stdout or "") + (p.stderr or "")).strip()
+          print(out[-2000:])
+          ok = p.returncode == 0 and os.path.exists(shot) and os.path.getsize(shot) > 5000
+          if not ok:
+              tail = out[-700:].replace("%", "%25").replace("", "").replace("
+", "%0A")
+              print("::error::Built app exit code " + str(p.returncode) + ", screenshot written: " + str(os.path.exists(shot)) + "%0A" + tail)
+              sys.exit(1)
+          PY
 
       - name: Zip the app too
         run: ditto -c -k --keepParent dist/Clawdmeter.app dist/Clawdmeter-arm64.zip
