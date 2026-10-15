@@ -416,7 +416,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.rstrip("/") in ("/healthz", "/health"):
-            self._send(200, {"ok": True})
+            self._send(200, {"ok": True, "app": "clawdmeter", "pc": _PC_NAME})
             return
         ip = self._note_client()
         body = dict(state.get_payload())

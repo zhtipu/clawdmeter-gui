@@ -274,6 +274,16 @@ class Bridge(QObject):
             self._transports.reselect()
         return err
 
+    @Slot(str, result=str)
+    def setTvs(self, hosts):
+        """Save the TV list right away (the Connection page calls this on every add or remove), so nothing is lost on a tab change."""
+        self._cfg["push_url"] = ", ".join(_hosts(hosts))
+        engine.save_config(self._cfg)
+        if self._transports.active == "push":
+            self._transports.reselect()
+        engine.state.refresh_event.set()
+        return self._cfg["push_url"]
+
     @Slot(str)
     def testDevice(self, host):
         def work():

@@ -28,15 +28,20 @@ Flickable {
             page.tvStatus = m
         }
     }
+    function saveTvs(note) {
+        bridge.setTvs(tvs.join(", "))
+        page.app.toast(page.mode === 0 ? note : note + ". Pick Push over WiFi to send to it", "good")
+    }
     function addTv() {
-        var parts = hosts.text.split(/[\s,;]+/), t = tvs.slice()
+        var parts = hosts.text.split(/[\s,;]+/), t = tvs.slice(), added = 0
         for (var i = 0; i < parts.length; i++) {
             var h = parts[i].trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "")
-            if (h && t.indexOf(h) < 0) t.push(h)
+            if (h && t.indexOf(h) < 0) { t.push(h); added++ }
         }
         tvs = t; hosts.text = ""
+        if (added > 0) saveTvs(added === 1 ? "TV added" : added + " TVs added")
     }
-    function removeTv(i) { var t = tvs.slice(); t.splice(i, 1); tvs = t }
+    function removeTv(i) { var t = tvs.slice(); t.splice(i, 1); tvs = t; saveTvs("TV removed") }
 
     function load() {
         var c = JSON.parse(bridge.deviceConfig())
