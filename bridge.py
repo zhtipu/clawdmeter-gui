@@ -1,4 +1,5 @@
-"""Bridge between the QML UI and the clawdmeter engine (engine.py is the unmodified daemon logic)."""
+"""Bridge between the QML UI and the engine. Usage comes from the official `claude` program (usage_cli.py);
+this app never handles a Claude login or token."""
 import json
 import os
 import re
@@ -9,13 +10,12 @@ import time
 
 import httpx
 from PySide6.QtCore import Property, QObject, Signal, Slot
-from PySide6.QtGui import QGuiApplication
 
 import engine
 import plat
+import usage_cli
 from alerts import Alerts
 
-TOKEN_VAR = plat.TOKEN_VAR
 PREFS_PATH = os.path.join(os.path.expanduser("~"), ".clawdmeter-gui.json")
 
 
@@ -57,20 +57,17 @@ class Bridge(QObject):
         self.notify = lambda title, body, level: None      # set by main once the tray exists
         self.alerts = Alerts(self._prefs, self._save_prefs, lambda t, b, l: self.notify(t, b, l))
 
-        # A token saved with setx is not in the environment of programs started before it was saved.
-        if not os.environ.get(TOKEN_VAR, "").strip():
-            tok = plat.token_get()
-            if tok:
-                os.environ[TOKEN_VAR] = tok
+        self._claude = {"found": False, "path": "", "signedIn": None, "method": "", "checked": 0}
+        self._claude_busy = False
 
-        self._login_seen = self._has_login()
         self._cfg = engine.load_config()
         if not self._cfg.get("push_url"):
             self._cfg["push_url"] = os.environ.get("CLAWDMETER_PUSH_URL", "")
         self._transports = engine.Transports(self._cfg)
         initial = self._cfg.get("transport") or ("push" if self._cfg.get("push_url") else "serve")
-        engine.poll_interval = max(30, int(self._cfg.get("poll_interval", engine.DEFAULT_POLL_INTERVAL)))
-        if poll:    # screenshot runs skip this so they do not hit Anthropic or the TV
+        saved = int(self._cfg.get("poll_interval", engine.DEFAULT_POLL_INTERVAL))
+        engine.poll_interval = saved if saved >= 120 else engine.DEFAULT_POLL_INTERVAL    # old faster settings are reset
+        if poll:    # screenshot runs skip this so they do not start Claude Code or touch the TV
             self._transports.select(initial)
             threading.Thread(target=engine.poller_loop, args=(engine.poll_interval,), daemon=True).start()
         engine.log("clawdmeter-gui started")
@@ -86,10 +83,6 @@ class Bridge(QObject):
     @Property(bool, notify=closeToTrayChanged)
     def closeToTray(self):
         return bool(self._prefs.get("closeToTray", True))
-
-    @Property(str, constant=True)
-    def tokenStoreName(self):
-        return "your Windows user settings" if plat.IS_WIN else ("the macOS Keychain" if plat.IS_MAC else "the system keyring")
 
     @Property(bool, notify=quittingChanged)
     def quitting(self):
@@ -161,7 +154,7 @@ class Bridge(QObject):
 
     @Slot(int)
     def setPollInterval(self, sec):
-        sec = max(30, int(sec))     # below 30s Anthropic starts rate limiting
+        sec = max(120, int(sec))    # each reading starts Claude Code, so never faster than every 2 minutes
         engine.poll_interval = sec
         self._cfg["poll_interval"] = sec
         engine.save_config(self._cfg)
@@ -222,76 +215,35 @@ class Bridge(QObject):
             self.testResult.emit(_j(res))
         threading.Thread(target=work, daemon=True).start()
 
-    # ---- account / token ---------------------------------------------------
-    def _has_login(self):
-        return plat.has_login(engine)
+    # ---- Claude Code ---------------------------------------------------------
+    def _check_claude(self):
+        if self._claude_busy:
+            return
+        self._claude_busy = True
+
+        def work():
+            try:
+                res = usage_cli.auth_status()
+                was = self._claude.get("signedIn")
+                self._claude = dict(res, checked=time.time())
+                if res.get("signedIn") and not was:      # just signed in: read usage right away
+                    engine.state.refresh_event.set()
+            finally:
+                self._claude_busy = False
+        threading.Thread(target=work, daemon=True).start()
 
     @Slot(result=str)
-    def tokenStatus(self):
-        saved = bool(os.environ.get(TOKEN_VAR, "").strip()) or bool(plat.token_get())
-        login = self._has_login()
-        connected = bool(engine.state.get_payload().get("ok"))
-        if login and not self._login_seen:      # just signed in: read usage right away
-            engine.state.refresh_event.set()
-        self._login_seen = login
-        return _j({"login": login, "token": saved, "connected": connected,
-                   "status": engine.state.status})
-
-    def _saved_token(self):
-        return os.environ.get(TOKEN_VAR, "").strip() or plat.token_get()
-
-    @Slot(result=str)
-    def maskedToken(self):
-        t = self._saved_token()
-        if not t:
-            return ""
-        return t[:12] + "\u2022" * 16 + t[-4:] if len(t) > 20 else "\u2022" * len(t)
-
-    @Slot(result=str)
-    def revealToken(self):
-        return self._saved_token()
-
-    @Slot(str)
-    def copyText(self, text):
-        QGuiApplication.clipboard().setText(text or self._saved_token())
-        self.toast.emit("Copied to the clipboard", "good")
-
-    @Slot(str, result=bool)
-    def saveToken(self, token):
-        token = (token or "").strip()
-        if not re.fullmatch(r"[A-Za-z0-9_\-\.=]{20,}", token):
-            self.toast.emit("That does not look like a token", "bad")
-            return False
-        try:
-            r = httpx.get(engine.USAGE_URL, headers={"Authorization": f"Bearer {token}",
-                          "User-Agent": engine.API_HEADERS_TEMPLATE["User-Agent"]}, timeout=8.0)
-            if r.status_code == 403 and "user:profile" in r.text:
-                self.toast.emit("Anthropic refuses this token for usage. Use Sign in instead", "bad")
-                return False
-            if r.status_code == 401:
-                self.toast.emit("That token was not accepted", "bad")
-                return False
-        except httpx.HTTPError:
-            pass   # offline: save it anyway, the poller will report any problem
-        res = plat.token_set(token)
-        if res is not True:
-            self.toast.emit(f"Could not save the token: {res}", "bad")
-            return False
-        os.environ[TOKEN_VAR] = token
-        engine.log("Token saved")
-        engine.state.refresh_event.set()
-        return True
-
-    @Slot(result=bool)
-    def clearToken(self):
-        plat.token_clear()
-        os.environ.pop(TOKEN_VAR, None)
-        engine.state.refresh_event.set()
-        return True
+    def claudeStatus(self):
+        """Is the official Claude Code program installed, and is it signed in? Asked of the program itself."""
+        if time.time() - self._claude.get("checked", 0) > 8:
+            self._check_claude()
+        c = self._claude
+        return _j({"found": c["found"], "path": c["path"], "signedIn": c["signedIn"], "method": c["method"],
+                   "connected": bool(engine.state.get_payload().get("ok")), "status": engine.state.status})
 
     @Slot()
     def signIn(self):
-        """Opens a terminal that runs `claude auth login`. That sign-in carries the scope the usage endpoint needs."""
+        """Opens a terminal that runs the official `claude auth login`. The sign-in happens in Claude Code, not here."""
         exe = plat.find_claude()
         if not exe:
             self.toast.emit("Claude Code is not installed on this computer. Install it from claude.com/code, then try again", "bad")

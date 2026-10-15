@@ -27,7 +27,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller
 
-      - name: Self-check (logic, login item, keychain, theme patch, every page renders)
+      - name: Self-check (logic, usage parser, login item, theme patch, every page renders)
         env:
           QT_QPA_PLATFORM: offscreen
           QT_QUICK_BACKEND: software

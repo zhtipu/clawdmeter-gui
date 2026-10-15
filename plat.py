@@ -1,4 +1,5 @@
-"""Everything that differs between Windows, macOS and Linux lives here, so the rest of the app stays the same."""
+"""Everything that differs between Windows, macOS and Linux lives here, so the rest of the app stays the same.
+Nothing here handles a Claude login or token."""
 import os
 import plistlib
 import shutil
@@ -8,7 +9,6 @@ import sys
 IS_WIN = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"
 APP_NAME = "Clawdmeter"
-TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 
 # Windows startup entries (registry value names ignore case, so the two must differ)
 WIN_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -19,8 +19,6 @@ WIN_OLD_RUN_NAME = "clawdmeter"            # the command-line daemon's entry
 MAC_LABEL = "com.clawdmeter.app"
 MAC_OLD_LABEL = "com.giovi321.clawdmeter"  # the command-line daemon's LaunchAgent
 
-KEYCHAIN_SERVICE = "Clawdmeter"
-KEYCHAIN_ACCOUNT = "oauth-token"
 
 
 def data_dir():
@@ -36,76 +34,7 @@ def data_dir():
     return path
 
 
-# ---- saved token -----------------------------------------------------------
-# Windows: the user environment, so other programs and a new terminal see it too.
-# macOS and Linux: the system keychain. A GUI app cannot rely on shell profile variables.
-
-def _keyring():
-    import keyring
-    return keyring
-
-
-def token_get():
-    if IS_WIN:
-        try:
-            import winreg
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
-                return str(winreg.QueryValueEx(k, TOKEN_VAR)[0]).strip()
-        except OSError:
-            return ""
-    try:
-        return (_keyring().get_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT) or "").strip()
-    except Exception:
-        return ""
-
-
-def token_set(token):
-    """True on success, otherwise a short reason string."""
-    if IS_WIN:
-        try:
-            import ctypes
-            import winreg
-            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE) as k:
-                winreg.SetValueEx(k, TOKEN_VAR, 0, winreg.REG_SZ, token)
-            ctypes.windll.user32.SendMessageTimeoutW(0xFFFF, 0x001A, 0, "Environment", 2, 3000, None)   # tell Explorer
-            return True
-        except OSError as e:
-            return str(e)
-    try:
-        _keyring().set_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, token)
-        return True
-    except Exception as e:
-        return type(e).__name__
-
-
-def token_clear():
-    if IS_WIN:
-        try:
-            import winreg
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE) as k:
-                winreg.DeleteValue(k, TOKEN_VAR)
-        except OSError:
-            pass
-        return
-    try:
-        _keyring().delete_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-    except Exception:
-        pass
-
-
 # ---- Claude Code sign-in ---------------------------------------------------
-
-def has_login(engine):
-    """Is there a Claude Code sign-in on this machine?"""
-    if IS_MAC:
-        try:
-            return bool(engine._read_token_keychain())
-        except Exception:
-            return False
-    c = engine._read_credentials_file()
-    o = engine._get_oauth_block(c) if c else None
-    return bool(o and isinstance(o.get("accessToken"), str))
-
 
 def find_claude():
     """The Claude Code CLI is often in a folder that a GUI app's PATH does not include."""

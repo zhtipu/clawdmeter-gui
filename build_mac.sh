@@ -25,7 +25,7 @@ python -m PyInstaller --noconfirm --windowed \
   --osx-bundle-identifier com.clawdmeter.app \
   --add-data "qml:qml" --add-data "assets:assets" \
   --hidden-import serial.tools.list_ports --hidden-import zeroconf \
-  --hidden-import keyring.backends.macOS --collect-submodules keyring --copy-metadata keyring \
+  --hidden-import tzdata --collect-data tzdata \
   --exclude-module PySide6.QtWebEngineCore --exclude-module PySide6.QtWebEngineWidgets \
   --exclude-module PySide6.Qt3DCore --exclude-module PySide6.QtCharts \
   --exclude-module PySide6.QtDataVisualization --exclude-module PySide6.QtMultimedia \

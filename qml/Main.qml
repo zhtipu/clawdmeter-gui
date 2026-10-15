@@ -57,7 +57,7 @@ ApplicationWindow {
                     { t: "Usage", g: "" },
                     { t: "Connection", g: "" },
                     { t: "Device Setup", g: "" },
-                    { t: "Account", g: "" },
+                    { t: "Claude Code", g: "" },
                     { t: "Settings", g: "" }
                 ]
 

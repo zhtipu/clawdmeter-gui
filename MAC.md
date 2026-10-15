@@ -22,18 +22,17 @@ The app is not signed with an Apple Developer ID, so macOS blocks it the first t
 | Thing | On Windows | On macOS |
 |---|---|---|
 | Start at login | Registry | A login item at `~/Library/LaunchAgents/com.clawdmeter.app.plist` |
-| Saved token | The user environment | The Keychain, under the name Clawdmeter |
 | Sign in | Opens a command window | Opens Terminal and runs `claude auth login` |
-| Claude Code sign-in | A credentials file | Read from the Keychain, as Claude Code stores it |
+| Usage numbers | The official `claude` program | The official `claude` program |
 | Critical alert sound | Windows alert sound | The Basso system sound |
 | Where the app sits | Tray icon | Dock icon and a menu bar icon. Closing the window keeps it running; Cmd+Q quits |
 | Fonts | Segoe UI | The system font |
 | Icons | Lucide | Lucide |
 
-The first time the app reads Claude Code's Keychain entry, macOS asks for permission. Choose **Always Allow**.
+The app finds `claude` in the usual places (`~/.local/bin`, Homebrew, npm). Install Claude Code and sign in to it first.
 
 Settings and alert choices are stored in `~/.clawdmeter-gui.json` and `~/.clawdmeter-daemon.json`. The log is `~/.clawdmeter-daemon.log`.
 
 ## Not tested yet
 
-Nothing here has run on a real Mac. The CI run checks the logic, the login item file, the Keychain, the theme patch and that every page renders, but it cannot click, hear a sound, or show a Notification Centre banner. Try those on a Mac and report anything odd.
+Nothing here has run on a real Mac. The CI run checks the logic, the usage parser, the login item file, the theme patch and that every page renders, but it cannot click, hear a sound, or show a Notification Centre banner. Try those on a Mac and report anything odd.

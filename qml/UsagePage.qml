@@ -60,10 +60,10 @@ Flickable {
                 Icon { text: ""; tint: Theme.bad; size: 22 }
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 2
-                    Text { text: "Claude is not connected"; color: Theme.text; font.family: Theme.font; font.pixelSize: 15; font.weight: Font.DemiBold }
+                    Text { text: "Usage is not available"; color: Theme.text; font.family: Theme.font; font.pixelSize: 15; font.weight: Font.DemiBold }
                     Text { Layout.fillWidth: true; text: s.status; wrapMode: Text.WordWrap; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13 }
                 }
-                Btn { text: "Set up account"; kind: "primary"; onClicked: page.app.go(3) }
+                Btn { text: "Set up Claude Code"; kind: "primary"; onClicked: page.app.go(3) }
             }
         }
 

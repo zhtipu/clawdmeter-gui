@@ -17,7 +17,7 @@ Flickable {
     property var al: ({ enabled: true, five: true, week: true, warn: 90, crit: 95, sound: true, resetNote: false, repeatMin: 0 })
     readonly property var repeatOpts: [ { label: "Only once", value: 0 }, { label: "Every 15 minutes", value: 15 }, { label: "Every 30 minutes", value: 30 }, { label: "Every hour", value: 60 } ]
     function setAl(key, v) { al = JSON.parse(bridge.setAlert(key, JSON.stringify(v))) }
-    readonly property var pollOpts: [ { label: "30 seconds", value: 30 }, { label: "1 minute", value: 60 }, { label: "2 minutes", value: 120 }, { label: "5 minutes", value: 300 }, { label: "10 minutes", value: 600 } ]
+    readonly property var pollOpts: [ { label: "2 minutes", value: 120 }, { label: "5 minutes", value: 300 }, { label: "10 minutes", value: 600 }, { label: "15 minutes", value: 900 }, { label: "30 minutes", value: 1800 } ]
     readonly property var pushOpts: [ { label: "10 seconds", value: 10 }, { label: "20 seconds", value: 20 }, { label: "30 seconds", value: 30 }, { label: "1 minute", value: 60 }, { label: "5 minutes", value: 300 } ]
     function idx(opts, v) { for (var i = 0; i < opts.length; i++) if (opts[i].value === v) return i; return -1 }
     function load() { rs = JSON.parse(bridge.refreshSettings()); al = JSON.parse(bridge.alertSettings()); autostart = bridge.autostartEnabled(); logText.text = bridge.logTail(); logFlick.contentY = Math.max(0, logFlick.contentHeight - logFlick.height) }
@@ -43,7 +43,7 @@ Flickable {
                     ColumnLayout {
                         Layout.fillWidth: true; spacing: 2
                         Text { text: "Check Claude every"; color: Theme.text; font.family: Theme.font; font.pixelSize: 14; font.weight: Font.Medium }
-                        Text { text: "How often your usage is read. Faster than 30 seconds gets rate limited."; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12 }
+                        Text { text: "Each reading starts Claude Code for a few seconds, so it is never faster than every 2 minutes."; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12 }
                     }
                     Combo {
                         Layout.preferredWidth: 170

@@ -1,6 +1,5 @@
 """Checks that run on every platform in CI (and locally): python ci_check.py
-Exits non-zero if something that must work does not. Keychain access is reported but never fails the run, because a CI
-runner's keychain can be locked even when the feature works on a real Mac."""
+Exits non-zero if something that must work does not."""
 import json
 import os
 import subprocess
@@ -21,9 +20,10 @@ def check(name, ok, detail=""):
         failures += 1
 
 
-# 1. alert logic
-r = subprocess.run([sys.executable, os.path.join(HERE, "tests", "test_alerts.py")], capture_output=True, text=True)
-check("alert logic tests", r.returncode == 0 and "FAILURES: 0" in r.stdout, r.stdout[-400:] + r.stderr[-400:])
+# 1. alert logic, usage parser, and the guard that keeps token and API code out of the app
+for name, label in (("test_alerts.py", "alert logic tests"), ("test_usage_cli.py", "usage parser tests"), ("test_compliance.py", "no token or API code in the app")):
+    r = subprocess.run([sys.executable, os.path.join(HERE, "tests", name)], capture_output=True, text=True)
+    check(label, r.returncode == 0 and "FAILURES: 0" in r.stdout, r.stdout[-400:] + r.stderr[-400:])
 
 # 2. platform layer, with HOME pointed at a temp folder so nothing real is touched
 tmp = tempfile.mkdtemp()
@@ -41,11 +41,6 @@ if plat.IS_MAC:
     check("login item turns on", plat.autostart_set(True) is True and plat.autostart_enabled())
     check("login item file is a valid plist", __import__("plistlib").load(open(plat._mac_plist(plat.MAC_LABEL), "rb"))["RunAtLoad"] is True)
     check("login item turns off", plat.autostart_set(False) is True and not plat.autostart_enabled())
-    check("sign-in check does not crash", isinstance(plat.has_login(engine), bool))
-    ok = plat.token_set("sk-ant-test-token-0000000000000000") is True and plat.token_get() == "sk-ant-test-token-0000000000000000"
-    plat.token_clear()
-    print(("PASS " if ok else "WARN ") + "keychain round trip" + ("" if ok else " (not available on this runner)"))
-    check("keychain cleared", plat.token_get() == "" or not ok)
 
 # 3. theme patch on the bundled Pixel Room
 from PySide6.QtWidgets import QApplication
