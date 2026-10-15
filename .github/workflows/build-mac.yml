@@ -64,8 +64,7 @@ jobs:
           print(out[-2000:])
           ok = p.returncode == 0 and os.path.exists(shot) and os.path.getsize(shot) > 5000
           if not ok:
-              tail = out[-700:].replace("%", "%25").replace("", "").replace("
-", "%0A")
+              tail = out[-700:].replace("%", "%25").replace(chr(13), "").replace(chr(10), "%0A")
               print("::error::Built app exit code " + str(p.returncode) + ", screenshot written: " + str(os.path.exists(shot)) + "%0A" + tail)
               sys.exit(1)
           PY
