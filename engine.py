@@ -390,6 +390,10 @@ def serial_loop(stop: threading.Event, explicit_port: str | None) -> None:
 
 # ---- Transport: HTTP server (device pulls) --------------------------------
 
+import socket as _socket
+_PC_NAME = (_socket.gethostname() or "Computer").split(".")[0]
+
+
 def norm_host(raw: str) -> str:
     """"http://192.168.0.31:80/x" -> "192.168.0.31", for comparing the TV a phone sends to with the TV this computer sends to."""
     v = raw.strip().lower()
@@ -416,6 +420,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         ip = self._note_client()
         body = dict(state.get_payload())
+        body["pc"] = _PC_NAME
         mine = state.clients.get(ip, {}).get("tvs", ())
         owners = state.phone_owners()
         # TVs this phone must leave alone: another phone feeds them, or this computer took them over after the phone failed

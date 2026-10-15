@@ -117,11 +117,15 @@ Flickable {
                     delegate: RowLayout {
                         Layout.fillWidth: true; spacing: 12
                         Icon { text: ""; tint: Theme.textDim; size: 18 }
-                        Text { text: modelData.host; color: Theme.text; font.family: Theme.mono; font.pixelSize: 13; Layout.fillWidth: true }
+                        ColumnLayout {
+                            Layout.fillWidth: true; spacing: 1
+                            Text { text: modelData.host; color: Theme.text; font.family: Theme.mono; font.pixelSize: 13 }
+                            Text { visible: modelData.detail === "phone"; text: "Held: " + modelData.heldBy + " is sending to it"; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 11 }
+                        }
                         Text { visible: modelData.age >= 0; text: page.ago(modelData.age); color: Theme.textFaint; font.family: Theme.font; font.pixelSize: 12 }
                         Chip {
-                            text: modelData.ok === true ? "Receiving" : modelData.ok === false ? "Not answering" : "Waiting"
-                            tone: modelData.ok === true ? "good" : modelData.ok === false ? "bad" : "neutral"
+                            text: modelData.detail === "phone" ? "On hold" : modelData.detail === "takeover" ? "Phone failed, sending here" : modelData.ok === true ? "Receiving" : modelData.ok === false ? "Not answering" : "Waiting"
+                            tone: modelData.detail === "phone" ? "info" : modelData.detail === "takeover" ? "accent" : modelData.ok === true ? "good" : modelData.ok === false ? "bad" : "neutral"
                         }
                     }
                 }
@@ -140,6 +144,35 @@ Flickable {
                     visible: s.transport === "serial"
                     text: s.port !== "" ? "Connected on " + s.port : "Looking for the device"
                     color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13
+                }
+            }
+        }
+
+        Card {
+            Layout.fillWidth: true
+            visible: (s.phones || []).length > 0
+            revealOn: page.active; order: 4
+            ColumnLayout {
+                width: parent.width; spacing: 12
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text { text: "Sending to phones"; color: Theme.text; font.family: Theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; Layout.fillWidth: true }
+                    Btn { text: "Manage"; kind: "ghost"; onClicked: page.app.go(2) }
+                }
+                Repeater {
+                    model: s.phones || []
+                    delegate: RowLayout {
+                        Layout.fillWidth: true; spacing: 12
+                        Icon { text: ""; tint: Theme.textDim; size: 18 }
+                        ColumnLayout {
+                            Layout.fillWidth: true; spacing: 1
+                            Text { text: modelData.name; color: Theme.text; font.family: Theme.font; font.pixelSize: 14; font.weight: Font.Medium }
+                            Text { text: modelData.ip; color: Theme.textDim; font.family: Theme.mono; font.pixelSize: 11 }
+                        }
+                        Text { text: page.ago(modelData.age); color: Theme.textFaint; font.family: Theme.font; font.pixelSize: 12 }
+                        Chip { text: ({wifi: "Wi-Fi", bluetooth: "Bluetooth", ethernet: "Ethernet", cellular: "Mobile data", network: "Network"})[modelData.link] || "Network"; tone: "info" }
+                        Chip { text: modelData.state === "connected" ? "Receiving" : "Idle"; tone: modelData.state === "connected" ? "good" : "accent" }
+                    }
                 }
             }
         }

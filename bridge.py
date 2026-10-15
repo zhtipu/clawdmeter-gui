@@ -128,9 +128,13 @@ class Bridge(QObject):
             port = st.port
         age = (time.time() - last) if last else -1
         devices = []
+        owners = engine.state.phone_owners()
+        with engine.state.lock:
+            names = {ip: c.get("name") or "Phone" for ip, c in engine.state.clients.items()}
         for url in engine._static_push_urls(self._cfg):
             ok, ts, detail = results.get(url, (None, 0, ""))
-            devices.append({"host": _host_of(url), "ok": ok, "age": (time.time() - ts) if ts else -1, "detail": detail})
+            held = names.get(owners.get(engine.norm_host(url), ""), "")
+            devices.append({"host": _host_of(url), "ok": ok, "age": (time.time() - ts) if ts else -1, "detail": detail, "heldBy": held})
         return _j({
             "ok": bool(payload.get("ok")),
             "s": payload.get("s", 0), "w": payload.get("w", 0),
@@ -140,6 +144,7 @@ class Bridge(QObject):
             "age": age,
             "transport": self._transports.active or "",
             "devices": devices,
+            "phones": [p for p in json.loads(self.phones()) if p["state"] != "gone"],
             "endpoint": endpoint, "port": port or "",
         })
 
