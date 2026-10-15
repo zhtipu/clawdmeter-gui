@@ -149,15 +149,29 @@ class State:
         """TV host -> phone address that is sending to it. One sender per TV: the phone seen first keeps it while it is live."""
         now = time.time()
         with self.lock:
-            live = sorted((c["first"], ip, c) for ip, c in self.clients.items() if now - c["last"] <= self.CLIENT_LIVE_S)
+            live = sorted((c["first"], ip, c) for ip, c in self.clients.items() if now - c["last"] <= self.live_window(c))
         owners: dict = {}
         for _, ip, c in live:
+            report = c.get("tvok", {})
+            since = c.get("since", {})
             for h in c.get("tvs", ()):
-                if not self.taken_over(h):
-                    owners.setdefault(h, ip)
+                if self.taken_over(h):
+                    continue
+                # A phone that claims a TV but never reports a push result (its relay is off, or it cannot reach the TV) must not
+                # keep this computer from sending: it owns the TV only while it reports success, or for a short grace after claiming it.
+                if h in report and report[h] != "ok":
+                    continue
+                if h not in report and now - since.get(h, now) > self.CLAIM_GRACE_S:
+                    continue
+                owners.setdefault(h, ip)
         return owners
 
+    def live_window(self, c: dict) -> float:
+        """How long after its last contact a phone still counts as live: at least 90 s, longer if it normally calls less often."""
+        return max(self.CLIENT_LIVE_S, 2.5 * min(c.get("gap", 0), 3600))
+
     TAKEOVER_S = 300
+    CLAIM_GRACE_S = 60
 
     def taken_over(self, host: str) -> bool:
         with self.lock:
@@ -407,8 +421,17 @@ def register_client(key: str, name: str, link: str, tvs: set, report: dict) -> N
     now = time.time()
     with state.lock:
         c = state.clients.setdefault(key, {"first": now, "count": 0})
-        if now - c.get("last", now) > state.CLIENT_LIVE_S:
+        if "last" in c:
+            c["gap"] = now - c["last"]            # how often this phone calls
+        if now - c.get("last", now) > state.live_window(c):
             c["first"] = now                      # came back after a gap: it no longer outranks phones that stayed
+            c["since"] = {}
+        since = c.setdefault("since", {})
+        for h in tvs:
+            since.setdefault(h, now)              # when this phone first claimed each TV
+        for h in list(since):
+            if h not in tvs:
+                del since[h]
         c.update(name=name or c.get("name", ""), link=link, last=now, tvs=tvs, tvok=report)
         c["count"] += 1
     for h, v in report.items():
@@ -578,6 +601,16 @@ def _tv_accepted(body: str) -> bool:
         return False
 
 
+def _is_smalltv(push_url: str) -> bool:
+    """Does the address answer /api/status the way a SmallTV does (a JSON object with its firmware name)?"""
+    base = push_url.split("/api/usage")[0].rstrip("/")
+    try:
+        r = httpx.get(base + "/api/status", timeout=4.0)
+        return r.status_code == 200 and isinstance(r.json(), dict) and "fw" in r.json()
+    except (httpx.HTTPError, ValueError):
+        return False
+
+
 def push_loop(stop: threading.Event, targets_fn, interval: float) -> None:
     """POST the latest payload to every current target each interval.
 
@@ -603,8 +636,14 @@ def push_loop(stop: threading.Event, targets_fn, interval: float) -> None:
                 try:
                     r = httpx.post(url, json=payload, timeout=10.0)
                     if r.status_code != 200 or not _tv_accepted(r.text):
-                        # a real SmallTV answers 200 with {"ok":true}; a router page or another device is not the TV
-                        why = "That address is not the SmallTV" if r.status_code in (200, 301, 302, 303, 307, 308) else f"HTTP {r.status_code}"
+                        # a real SmallTV answers 200 with {"ok":true}; a router page or another device is not the TV. Older firmware may
+                        # reply differently, so an address that identifies itself as a SmallTV still counts.
+                        odd = r.status_code in (200, 301, 302, 303, 307, 308)
+                        if odd and _is_smalltv(url):
+                            state.push_results[url] = (True, time.time(), "takeover" if took else "")
+                            ok_urls.add(url)
+                            continue
+                        why = "That address is not the SmallTV" if odd else f"HTTP {r.status_code}"
                         log(f"Push {url}: {why}")
                         state.push_results[url] = (False, time.time(), why)
                         ok_urls.discard(url)

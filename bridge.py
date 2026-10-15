@@ -219,8 +219,9 @@ class Bridge(QObject):
                 else:
                     st = c.get("tvok", {}).get(h, "pending")
                 tvs.append({"host": h, "state": st})
-            out.append({"tvs": tvs, "ip": c["ip"], "name": c.get("name") or "Phone", "link": c.get("link", "network"), "age": age,
-                        "state": "connected" if age <= 90 else ("idle" if age <= 600 else "gone"), "count": c["count"]})
+            out.append({"tvs": tvs, "ip": "Bluetooth" if str(c["ip"]).startswith("ble:") else c["ip"], "name": c.get("name") or "Phone", "link": c.get("link", "network"), "age": age,
+                        "state": "connected" if age <= engine.state.live_window(c) else ("idle" if age <= max(600, 2 * engine.state.live_window(c)) else "gone"),
+                        "count": c["count"]})
         return _j(out)
 
     # ---- device ------------------------------------------------------------
@@ -287,6 +288,8 @@ class Bridge(QObject):
         out = []
         for p in saved:
             st = status.get(p["id"], {})
+            if self._ble is None and saved:
+                st = {"state": "error", "detail": "Bluetooth is not available in this copy of the app"}
             out.append(dict(p, state=st.get("state", "connecting"), detail=st.get("detail", ""), last=st.get("last", 0)))
         return _j(out)
 
