@@ -22,6 +22,7 @@ Flickable {
     property bool bleScanning: false
     property string bleError: ""
     property bool bleSearched: false
+    property int bleSeen: 0
 
     function load() {
         var c = JSON.parse(bridge.phoneConfig())
@@ -43,7 +44,7 @@ Flickable {
         function onBleScanned(j) {
             var r = JSON.parse(j)
             page.bleScanning = false; page.bleSearched = true
-            page.bleError = r.error; page.bleFound = r.phones
+            page.bleError = r.error; page.bleFound = r.phones; page.bleSeen = r.seen || 0
         }
     }
 
@@ -134,7 +135,7 @@ Flickable {
                 Text {
                     visible: page.bleSearched && !page.bleScanning && page.bleError === "" && page.bleFound.length === 0
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
-                    text: "No phone found. On the phone, open the app, switch Relay on and turn on Bluetooth, and keep it close to this computer."
+                    text: (page.bleSeen > 0 ? "Heard " + page.bleSeen + " Bluetooth devices, but none is the phone app. " : "Heard no Bluetooth devices at all, so check that Bluetooth is on for this computer. ") + "On the phone, open the app, allow its Bluetooth permission, keep the screen on, and keep it close to this computer."
                     color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13
                 }
                 Repeater {

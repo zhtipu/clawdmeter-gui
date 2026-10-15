@@ -51,8 +51,9 @@ class PhoneSide(unittest.TestCase):
     def test_bad_status_is_harmless(self):
         self.assertEqual(ble.parse_status(b"not json"), ("", set(), {}))
 
-    def test_advert_carries_id_and_name(self):
-        self.assertEqual(ble.parse_advert({0xFFFF: bytes([0xDE, 0xAD, 0xBE, 0xEF]) + b"Pixel 8"}), ("deadbeef", "Pixel 8"))
+    def test_advert_carries_the_id(self):
+        self.assertEqual(ble.parse_advert({0xFFFF: bytes([0xDE, 0xAD, 0xBE, 0xEF])}), ("deadbeef", ""))
+        self.assertEqual(ble.parse_advert({0xFFFF: bytes([0xDE, 0xAD, 0xBE, 0xEF]) + b"Pixel 8"}), ("deadbeef", "Pixel 8"))     # older phones added a name
         self.assertIsNone(ble.parse_advert({0x004C: b"\x01\x02\x03\x04\x05"}))
         self.assertIsNone(ble.parse_advert({0xFFFF: b"\x01"}))
 

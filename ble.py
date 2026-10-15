@@ -8,8 +8,8 @@ Service layout (must match the phone app, see BleServer.kt):
   USAGE  write   8 bytes  version, 5-hour %, week %, 5-hour minutes (u16), week minutes (u16), flags
   CTRL   write   JSON     {"pc": "<computer name>", "skip": ["<tv>", ...]}
   STATUS read    JSON     {"name": "<phone>", "tvs": ["<tv>", ...], "ok": {"<tv>": "ok" | "fail"}}
-The phone's advertisement carries manufacturer data 0xFFFF = 4 byte phone id + phone name, so a phone is recognised even
-though its Bluetooth address changes every few minutes.
+The phone's advertisement carries the service and manufacturer data 0xFFFF = 4 byte phone id, so a phone is recognised even
+though its Bluetooth address changes every few minutes. Its name comes in the advertisement reply.
 """
 import asyncio
 import json
@@ -71,7 +71,7 @@ def parse_status(raw: bytes):
 def parse_advert(manufacturer_data: dict):
     """-> (phone id as hex, phone name) from the advertisement, or None when it is not ours."""
     b = manufacturer_data.get(COMPANY)
-    if not b or len(b) < 5:
+    if not b or len(b) < 4:
         return None
     return bytes(b[:4]).hex(), bytes(b[4:]).decode("utf-8", "replace").strip("\x00 ")
 
@@ -89,6 +89,7 @@ class BleLink:
         self.tasks: dict = {}
         self.status: dict = {}           # phone id -> {"state": connecting | connected | missing | error, "detail": str, "last": unix time}
         self._addr: dict = {}            # phone id -> last address seen
+        self.last_seen = 0
 
     def _ensure_loop(self):
         if self.loop is None:
@@ -108,12 +109,12 @@ class BleLink:
         found = await BleakScanner.discover(timeout=seconds, return_adv=True)
         out = []
         for addr, (dev, adv) in found.items():
-            if SERVICE not in [u.lower() for u in adv.service_uuids]:
-                continue
             ident = parse_advert(adv.manufacturer_data)
-            if ident:
-                self._addr[ident[0]] = dev
-                out.append({"id": ident[0], "name": ident[1] or adv.local_name or "Phone", "rssi": adv.rssi, "address": addr})
+            if not ident:
+                continue
+            self._addr[ident[0]] = dev
+            out.append({"id": ident[0], "name": ident[1] or adv.local_name or dev.name or "Phone", "rssi": adv.rssi, "address": addr})
+        self.last_seen = len(found)                           # how many Bluetooth devices were heard at all, to tell "no radio" from "no phone"
         return sorted(out, key=lambda d: -d["rssi"])
 
     # -- keeping saved phones connected

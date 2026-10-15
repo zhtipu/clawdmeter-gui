@@ -272,8 +272,9 @@ class Bridge(QObject):
     def bleScan(self):
         def work():
             try:
-                phones = self._ble_link().scan(6.0)
-                self.bleScanned.emit(_j({"ok": True, "error": "", "phones": phones}))
+                link = self._ble_link()
+                phones = link.scan(8.0)
+                self.bleScanned.emit(_j({"ok": True, "error": "", "phones": phones, "seen": link.last_seen}))
             except Exception as e:
                 msg = "Bluetooth is off or this computer has no Bluetooth" if "bluetooth" in str(e).lower() or type(e).__name__.startswith("Bleak") else type(e).__name__
                 self.bleScanned.emit(_j({"ok": False, "error": msg, "phones": []}))
