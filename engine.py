@@ -401,6 +401,30 @@ def norm_host(raw: str) -> str:
     return v.rsplit(":", 1)[0] if v.count(":") == 1 else v
 
 
+def register_client(key: str, name: str, link: str, tvs: set, report: dict) -> None:
+    """Record that a phone just talked to this computer, by Wi-Fi or Bluetooth, with the TVs it feeds and how its last pushes went.
+    If it could not reach a TV it was feeding, this computer takes that TV over for a while."""
+    now = time.time()
+    with state.lock:
+        c = state.clients.setdefault(key, {"first": now, "count": 0})
+        if now - c.get("last", now) > state.CLIENT_LIVE_S:
+            c["first"] = now                      # came back after a gap: it no longer outranks phones that stayed
+        c.update(name=name or c.get("name", ""), link=link, last=now, tvs=tvs, tvok=report)
+        c["count"] += 1
+    for h, v in report.items():
+        if v == "fail" and h in tvs and not state.taken_over(h):
+            with state.lock:
+                state.takeover[h] = now + state.TAKEOVER_S
+            log(f"Phone {key} could not reach {h}; sending from this computer for {state.TAKEOVER_S // 60} min")
+
+
+def skip_for(key: str) -> list:
+    """TVs this phone must leave alone: another phone feeds them, or this computer took them over after the phone failed."""
+    mine = state.clients.get(key, {}).get("tvs", ())
+    owners = state.phone_owners()
+    return sorted(h for h in mine if owners.get(h, key) != key or state.taken_over(h))
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body: dict):
         data = json.dumps(body, separators=(",", ":")).encode()
@@ -421,10 +445,7 @@ class Handler(BaseHTTPRequestHandler):
         ip = self._note_client()
         body = dict(state.get_payload())
         body["pc"] = _PC_NAME
-        mine = state.clients.get(ip, {}).get("tvs", ())
-        owners = state.phone_owners()
-        # TVs this phone must leave alone: another phone feeds them, or this computer took them over after the phone failed
-        body["skip"] = sorted(h for h in mine if owners.get(h, ip) != ip or state.taken_over(h))
+        body["skip"] = skip_for(ip)
         self._send(200, body)
 
     def _note_client(self):
@@ -434,25 +455,12 @@ class Handler(BaseHTTPRequestHandler):
         if link not in ("wifi", "bluetooth", "ethernet", "cellular"):
             link = "network"
         tvs = {norm_host(t) for t in self.headers.get("X-Clawdmeter-Tvs", "").split(",") if t.strip()}
-        now = time.time()
-        with state.lock:
-            c = state.clients.setdefault(ip, {"first": now, "count": 0})
-            if now - c.get("last", now) > state.CLIENT_LIVE_S:
-                c["first"] = now                      # came back after a gap: it no longer outranks phones that stayed
-            c.update(name=name or c.get("name", ""), link=link, last=now, tvs=tvs)
-            c["count"] += 1
         report = {}
         for part in self.headers.get("X-Clawdmeter-Tv-Status", "").split(","):
             h, _, v = part.partition("=")
             if h.strip() and v.strip() in ("ok", "fail"):
                 report[norm_host(h)] = v.strip()
-        with state.lock:
-            c["tvok"] = report
-        for h, v in report.items():              # the phone says it could not reach a TV it was feeding: this computer takes over
-            if v == "fail" and h in tvs and not state.taken_over(h):
-                with state.lock:
-                    state.takeover[h] = now + state.TAKEOVER_S
-                log(f"Phone {ip} could not reach {h}; sending from this computer for {state.TAKEOVER_S // 60} min")
+        register_client(ip, name, link, tvs, report)
         return ip
 
     def log_message(self, *args):

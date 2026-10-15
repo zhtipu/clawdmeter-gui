@@ -18,6 +18,20 @@ def main():
         print("autostart:", "on" if b.autostartEnabled() else "off")
         return 0
 
+    # Headless helper: Clawdmeter App.exe --ble-selftest result.json. Looks for phones for a few seconds and writes what it saw,
+    # so a build can be checked for Bluetooth support without opening a window.
+    if "--ble-selftest" in args:
+        out = args[args.index("--ble-selftest") + 1]
+        try:
+            import ble
+            found = ble.BleLink(lambda: {}, lambda *a: None, lambda k: [], lambda m: None, "selftest").scan(4.0)
+            res = {"ok": True, "phones": found}
+        except Exception as e:
+            res = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(res, f)
+        return 0
+
     from PySide6.QtCore import QEvent, QObject, QRectF, Qt, QTimer, QUrl
     from PySide6.QtGui import QAction, QColor, QFontDatabase, QIcon, QPainter, QPen, QPixmap
     from PySide6.QtNetwork import QLocalServer, QLocalSocket

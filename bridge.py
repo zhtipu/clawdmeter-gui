@@ -40,6 +40,7 @@ def _host_of(url):
 
 class Bridge(QObject):
     toast = Signal(str, str)               # message, kind
+    bleScanned = Signal(str)               # json: {ok, error, phones}
     testResult = Signal(str)               # JSON from a connection test
     closeToTrayChanged = Signal()
     quittingChanged = Signal()
@@ -64,12 +65,15 @@ class Bridge(QObject):
         if not self._cfg.get("push_url"):
             self._cfg["push_url"] = os.environ.get("CLAWDMETER_PUSH_URL", "")
         self._transports = engine.Transports(self._cfg)
+        self._ble = None
         initial = self._cfg.get("transport") or ("push" if self._cfg.get("push_url") else "serve")
         saved = int(self._cfg.get("poll_interval", engine.DEFAULT_POLL_INTERVAL))
         engine.poll_interval = saved if saved >= 120 else engine.DEFAULT_POLL_INTERVAL    # old faster settings are reset
         if poll:    # screenshot runs skip this so they do not start Claude Code or touch the TV
             self._transports.select(initial)
             self._transports.sync_phone()
+            if self._cfg.get("ble_phones"):
+                self._ble_sync()
             threading.Thread(target=engine.poller_loop, args=(engine.poll_interval,), daemon=True).start()
         engine.log("clawdmeter-gui started")
 
@@ -250,6 +254,56 @@ class Bridge(QObject):
         self._transports.sync_phone()
         engine.state.refresh_event.set()
         return True
+
+    # ---- Bluetooth link to the phone app ----------------------------------
+    def _ble_link(self):
+        if self._ble is None:
+            import ble                                  # needs bleak; a missing install only disables Bluetooth
+            self._ble = ble.BleLink(engine.state.get_payload, engine.register_client, engine.skip_for, engine.log, engine._PC_NAME)
+        return self._ble
+
+    def _ble_sync(self):
+        try:
+            self._ble_link().sync(self._cfg.get("ble_phones", []))
+        except Exception as e:
+            engine.log(f"Bluetooth unavailable: {type(e).__name__}")
+
+    @Slot()
+    def bleScan(self):
+        def work():
+            try:
+                phones = self._ble_link().scan(6.0)
+                self.bleScanned.emit(_j({"ok": True, "error": "", "phones": phones}))
+            except Exception as e:
+                msg = "Bluetooth is off or this computer has no Bluetooth" if "bluetooth" in str(e).lower() or type(e).__name__.startswith("Bleak") else type(e).__name__
+                self.bleScanned.emit(_j({"ok": False, "error": msg, "phones": []}))
+        threading.Thread(target=work, daemon=True).start()
+
+    @Slot(result=str)
+    def blePhones(self):
+        saved = self._cfg.get("ble_phones", [])
+        status = self._ble.status if self._ble else {}
+        out = []
+        for p in saved:
+            st = status.get(p["id"], {})
+            out.append(dict(p, state=st.get("state", "connecting"), detail=st.get("detail", ""), last=st.get("last", 0)))
+        return _j(out)
+
+    @Slot(str, str)
+    def bleAdd(self, pid, name):
+        saved = [p for p in self._cfg.get("ble_phones", []) if p["id"] != pid]
+        saved.append({"id": pid, "name": name or "Phone"})
+        self._cfg["ble_phones"] = saved
+        engine.save_config(self._cfg)
+        self._ble_sync()
+
+    @Slot(str)
+    def bleRemove(self, pid):
+        self._cfg["ble_phones"] = [p for p in self._cfg.get("ble_phones", []) if p["id"] != pid]
+        engine.save_config(self._cfg)
+        self._ble_sync()
+        with engine.state.lock:
+            engine.state.clients.pop("ble:" + pid, None)
 
     @Slot(str)
     def copyText(self, text):

@@ -21,7 +21,7 @@ def check(name, ok, detail=""):
 
 
 # 1. alert logic, usage parser, and the guard that keeps token and API code out of the app
-for name, label in (("test_alerts.py", "alert logic tests"), ("test_usage_cli.py", "usage parser tests"), ("test_compliance.py", "no token or API code in the app")):
+for name, label in (("test_alerts.py", "alert logic tests"), ("test_usage_cli.py", "usage parser tests"), ("test_compliance.py", "no token or API code in the app"), ("test_ble.py", "Bluetooth wire format")):
     r = subprocess.run([sys.executable, os.path.join(HERE, "tests", name)], capture_output=True, text=True)
     check(label, r.returncode == 0 and "FAILURES: 0" in r.stdout, r.stdout[-400:] + r.stderr[-400:])
 

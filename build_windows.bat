@@ -6,6 +6,7 @@ cd /d "%~dp0"
 python -m PyInstaller --noconfirm --onefile --windowed --name "Clawdmeter App" --icon assets\icon.ico ^
   --add-data "qml;qml" --add-data "assets;assets" ^
   --hidden-import serial.tools.list_ports --hidden-import zeroconf --hidden-import tzdata --collect-data tzdata ^
+  --hidden-import bleak --collect-submodules bleak --collect-submodules winrt ^
   --exclude-module PySide6.QtWebEngineCore --exclude-module PySide6.QtWebEngineWidgets ^
   --exclude-module PySide6.Qt3DCore --exclude-module PySide6.QtCharts ^
   --exclude-module PySide6.QtDataVisualization --exclude-module PySide6.QtMultimedia ^

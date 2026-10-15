@@ -26,6 +26,7 @@ python -m PyInstaller --noconfirm --windowed \
   --add-data "qml:qml" --add-data "assets:assets" \
   --hidden-import serial.tools.list_ports --hidden-import zeroconf \
   --hidden-import tzdata --collect-data tzdata \
+  --hidden-import bleak --collect-submodules bleak \
   --exclude-module PySide6.QtWebEngineCore --exclude-module PySide6.QtWebEngineWidgets \
   --exclude-module PySide6.Qt3DCore --exclude-module PySide6.QtCharts \
   --exclude-module PySide6.QtDataVisualization --exclude-module PySide6.QtMultimedia \
@@ -39,6 +40,8 @@ PLIST="$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :NSHighResolutionCapable true" "$PLIST" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :LSApplicationCategoryType string public.app-category.utilities" "$PLIST" 2>/dev/null || true
+# macOS closes an app that uses Bluetooth without saying why, so say why
+/usr/libexec/PlistBuddy -c "Add :NSBluetoothAlwaysUsageDescription string Clawdmeter uses Bluetooth to send your usage numbers to the Clawdmeter phone app." "$PLIST" 2>/dev/null || true
 
 # Unsigned for distribution, but Apple Silicon needs at least an ad-hoc signature to run at all
 codesign --force --deep --sign - "$APP"

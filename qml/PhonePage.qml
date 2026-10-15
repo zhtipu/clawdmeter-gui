@@ -17,6 +17,11 @@ Flickable {
     property string error: ""
     property var urls: []
     property var phones: []
+    property var blePhones: []
+    property var bleFound: []
+    property bool bleScanning: false
+    property string bleError: ""
+    property bool bleSearched: false
 
     function load() {
         var c = JSON.parse(bridge.phoneConfig())
@@ -33,9 +38,18 @@ Flickable {
     onActiveChanged: if (active) load()
     Component.onCompleted: load()
 
+    Connections {
+        target: bridge
+        function onBleScanned(j) {
+            var r = JSON.parse(j)
+            page.bleScanning = false; page.bleSearched = true
+            page.bleError = r.error; page.bleFound = r.phones
+        }
+    }
+
     Timer {
         interval: 3000; repeat: true; running: page.active; triggeredOnStart: true
-        onTriggered: page.phones = JSON.parse(bridge.phones())
+        onTriggered: { page.phones = JSON.parse(bridge.phones()); page.blePhones = JSON.parse(bridge.blePhones()) }
     }
 
     ColumnLayout {
@@ -81,8 +95,70 @@ Flickable {
 
         Card {
             Layout.fillWidth: true
-            visible: page.on
             revealOn: page.active; order: 1
+            ColumnLayout {
+                width: parent.width; spacing: 12
+                Text { text: "Bluetooth"; color: Theme.text; font.family: Theme.font; font.pixelSize: 16; font.weight: Font.DemiBold }
+                Text {
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    text: "Pair with the phone app directly, no Wi-Fi needed between them. This computer sends the numbers to the phone over Bluetooth, and the phone passes them to the TVs over its own Wi-Fi."
+                    color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13
+                }
+                Repeater {
+                    model: page.blePhones
+                    delegate: Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 52; radius: 12; color: Theme.surfaceHi; border.width: 1; border.color: Theme.border
+                        RowLayout {
+                            anchors { fill: parent; leftMargin: 14; rightMargin: 8 }
+                            spacing: 10
+                            Icon { text: "\uE163"; size: 17; tint: Theme.textDim }
+                            Text { Layout.fillWidth: true; text: modelData.name; color: Theme.text; font.family: Theme.font; font.pixelSize: 14; font.weight: Font.Medium; elide: Text.ElideRight }
+                            Chip {
+                                text: modelData.state === "connected" ? "Connected" : modelData.state === "missing" ? "Not in range" : modelData.state === "error" ? "Cannot connect" : "Connecting"
+                                tone: modelData.state === "connected" ? "good" : modelData.state === "connecting" ? "neutral" : "bad"
+                            }
+                            Btn { text: ""; glyph: "\uE1B2"; kind: "ghost"; onClicked: bridge.bleRemove(modelData.id) }
+                        }
+                    }
+                }
+                RowLayout {
+                    spacing: 10
+                    Btn {
+                        text: "Find phones"; glyph: "\uE05C"; busy: page.bleScanning
+                        onClicked: { page.bleScanning = true; page.bleError = ""; page.bleFound = []; bridge.bleScan() }
+                    }
+                    Text { visible: page.bleScanning; text: "Looking for phones with the app open..."; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12 }
+                }
+                Text { visible: page.bleError !== ""; Layout.fillWidth: true; wrapMode: Text.WordWrap; text: page.bleError; color: Theme.bad; font.family: Theme.font; font.pixelSize: 13 }
+                Text {
+                    visible: page.bleSearched && !page.bleScanning && page.bleError === "" && page.bleFound.length === 0
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    text: "No phone found. On the phone, open the app, switch Relay on and turn on Bluetooth, and keep it close to this computer."
+                    color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13
+                }
+                Repeater {
+                    model: page.bleFound
+                    delegate: Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 52; radius: 12; color: Theme.surface; border.width: 1; border.color: Theme.border
+                        RowLayout {
+                            anchors { fill: parent; leftMargin: 14; rightMargin: 8 }
+                            spacing: 10
+                            Icon { text: "\uE163"; size: 17; tint: Theme.accent }
+                            Text { Layout.fillWidth: true; text: modelData.name; color: Theme.text; font.family: Theme.font; font.pixelSize: 14; font.weight: Font.Medium; elide: Text.ElideRight }
+                            Text { text: modelData.rssi + " dBm"; color: Theme.textFaint; font.family: Theme.mono; font.pixelSize: 11 }
+                            Btn { text: "Add"; glyph: "\uE13D"; onClicked: { bridge.bleAdd(modelData.id, modelData.name); page.bleFound = page.bleFound.filter(function (f) { return f.id !== modelData.id }); page.blePhones = JSON.parse(bridge.blePhones()) } }
+                        }
+                    }
+                }
+            }
+        }
+
+        Card {
+            Layout.fillWidth: true
+            visible: page.on
+            revealOn: page.active; order: 2
             ColumnLayout {
                 width: parent.width; spacing: 10
                 Text { text: "Address for the phone app"; color: Theme.text; font.family: Theme.font; font.pixelSize: 16; font.weight: Font.DemiBold }
