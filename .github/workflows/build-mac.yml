@@ -5,21 +5,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# a newer push replaces a run that is still going
+concurrency:
+  group: build-mac
+  cancel-in-progress: true
+
 jobs:
   mac:
-    name: macOS ${{ matrix.label }}
-    runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.optional }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest          # Apple Silicon
-            label: arm64
-            optional: false
-          - os: macos-15-intel        # Intel Macs
-            label: x86_64
-            optional: true
+    name: macOS (Apple Silicon)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -56,18 +50,18 @@ jobs:
           test -s "${{ runner.temp }}/shots/built-app.png"
 
       - name: Zip the app too
-        run: ditto -c -k --keepParent dist/Clawdmeter.app dist/Clawdmeter-${{ matrix.label }}.zip
+        run: ditto -c -k --keepParent dist/Clawdmeter.app dist/Clawdmeter-arm64.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Clawdmeter-macOS-${{ matrix.label }}
+          name: Clawdmeter-macOS-arm64
           path: |
             dist/Clawdmeter.dmg
-            dist/Clawdmeter-${{ matrix.label }}.zip
+            dist/Clawdmeter-arm64.zip
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: screenshots-${{ matrix.label }}
+          name: screenshots
           path: ${{ runner.temp }}/shots
           if-no-files-found: ignore

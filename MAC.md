@@ -5,7 +5,7 @@
 A Mac app cannot be built on Windows, so it is built by GitHub Actions on a Mac runner.
 
 1. Put this folder in a GitHub repository and push it to the `main` branch. The workflow in `.github/workflows/build-mac.yml` starts by itself. You can also start it from the repository's **Actions** tab with **Run workflow**.
-2. When the run finishes, open it and download the artifact **Clawdmeter-macOS-arm64** (Apple Silicon Macs) or **Clawdmeter-macOS-x86_64** (Intel Macs). It holds `Clawdmeter.dmg` and a zipped copy of the app.
+2. When the run finishes, open it and download the artifact **Clawdmeter-macOS-arm64**. It holds `Clawdmeter.dmg` and a zipped copy of the app. Only Apple Silicon Macs (M1 and newer) are built; Intel Macs are not supported.
 3. The **screenshots** artifact shows each page as it rendered on the Mac runner.
 
 To build by hand on a Mac instead, run `./build_mac.sh`. It makes `dist/Clawdmeter.dmg`.
