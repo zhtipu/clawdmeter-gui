@@ -69,6 +69,7 @@ class Bridge(QObject):
         engine.poll_interval = saved if saved >= 120 else engine.DEFAULT_POLL_INTERVAL    # old faster settings are reset
         if poll:    # screenshot runs skip this so they do not start Claude Code or touch the TV
             self._transports.select(initial)
+            self._transports.sync_phone()
             threading.Thread(target=engine.poller_loop, args=(engine.poll_interval,), daemon=True).start()
         engine.log("clawdmeter-gui started")
 
@@ -167,6 +168,52 @@ class Bridge(QObject):
         if self._transports.active == "push":
             self._transports.reselect()
 
+    @Slot(result=str)
+    def localUrls(self):
+        """This computer's addresses on its networks, as the URL a phone or TV would open to get the numbers."""
+        import socket
+        ips = []
+        try:                                         # the address used to reach the outside world first
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("192.0.2.1", 9))
+            ips.append(s.getsockname()[0])
+            s.close()
+        except OSError:
+            pass
+        try:
+            ips += socket.gethostbyname_ex(socket.gethostname())[2]
+        except OSError:
+            pass
+        out = []
+        for ip in ips:
+            if not ip.startswith(("127.", "169.254.")) and ip not in out:
+                out.append(ip)
+        port = int(self._cfg.get("serve_port", engine.DEFAULT_PORT))
+        return _j([f"http://{ip}:{port}/" for ip in out])
+
+    @Slot(result=str)
+    def phones(self):
+        """Phones that have fetched the numbers from this computer, with how they are linked and how fresh they are."""
+        now = time.time()
+        with engine.state.lock:
+            rows = [dict(c, ip=ip) for ip, c in engine.state.clients.items()]
+        owners = engine.state.phone_owners()
+        out = []
+        for c in sorted(rows, key=lambda r: -r["last"]):
+            age = int(now - c["last"])
+            tvs = []
+            for h in sorted(c.get("tvs", ())):
+                if engine.state.taken_over(h):
+                    st = "taken"                 # the phone failed, this computer sends instead
+                elif owners.get(h, c["ip"]) != c["ip"]:
+                    st = "other"                 # another phone feeds it
+                else:
+                    st = c.get("tvok", {}).get(h, "pending")
+                tvs.append({"host": h, "state": st})
+            out.append({"tvs": tvs, "ip": c["ip"], "name": c.get("name") or "Phone", "link": c.get("link", "network"), "age": age,
+                        "state": "connected" if age <= 90 else ("idle" if age <= 600 else "gone"), "count": c["count"]})
+        return _j(out)
+
     # ---- device ------------------------------------------------------------
     @Slot(result=str)
     def deviceConfig(self):
@@ -189,13 +236,38 @@ class Bridge(QObject):
         c["serve_port"] = int(p.get("servePort", engine.DEFAULT_PORT))
         c["serial_port"] = (p.get("serialPort") or "").strip() or None
         engine.save_config(c)
+        self._transports.sync_phone()
         want = p.get("transport", "push")
         if self._transports.active == want:
             self._transports.reselect()
         else:
             self._transports.select(want)
+        self._transports.sync_phone()
         engine.state.refresh_event.set()
         return True
+
+    @Slot(str)
+    def copyText(self, text):
+        from PySide6.QtGui import QGuiApplication
+        QGuiApplication.clipboard().setText(text)
+        self.toast.emit("Copied", "good")
+
+    @Slot(result=str)
+    def phoneConfig(self):
+        serving = self._transports.active == "serve" or bool(self._cfg.get("phone_serve"))
+        return _j({"on": serving, "viaServe": self._transports.active == "serve",
+                   "port": int(self._cfg.get("serve_port", engine.DEFAULT_PORT))})
+
+    @Slot(bool, int, result=str)
+    def setPhone(self, on, port):
+        """Turn the phone app server on or off. Returns an error text, or empty when fine."""
+        self._cfg["phone_serve"] = bool(on)
+        self._cfg["serve_port"] = max(1024, min(65535, int(port)))
+        engine.save_config(self._cfg)
+        err = self._transports.sync_phone()
+        if self._transports.active == "serve":
+            self._transports.reselect()
+        return err
 
     @Slot(str)
     def testDevice(self, host):

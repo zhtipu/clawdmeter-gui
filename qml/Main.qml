@@ -56,6 +56,7 @@ ApplicationWindow {
                 readonly property var model: [
                     { t: "Usage", g: "" },
                     { t: "Connection", g: "" },
+                    { t: "Phone app", g: "" },
                     { t: "Device Setup", g: "" },
                     { t: "Claude Code", g: "" },
                     { t: "Settings", g: "" }
@@ -115,11 +116,13 @@ ApplicationWindow {
                 Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } } }
             DevicePage { app: root; anchors.fill: parent; active: root.cur === 1; opacity: active ? 1 : 0; visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } } }
-            DeviceSetupPage { app: root; anchors.fill: parent; active: root.cur === 2; opacity: active ? 1 : 0; visible: opacity > 0.01
+            PhonePage { app: root; anchors.fill: parent; active: root.cur === 2; opacity: active ? 1 : 0; visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } } }
-            AccountPage { app: root; anchors.fill: parent; active: root.cur === 3; opacity: active ? 1 : 0; visible: opacity > 0.01
+            DeviceSetupPage { app: root; anchors.fill: parent; active: root.cur === 3; opacity: active ? 1 : 0; visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } } }
-            SettingsPage { app: root; anchors.fill: parent; active: root.cur === 4; opacity: active ? 1 : 0; visible: opacity > 0.01
+            AccountPage { app: root; anchors.fill: parent; active: root.cur === 4; opacity: active ? 1 : 0; visible: opacity > 0.01
+                Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } } }
+            SettingsPage { app: root; anchors.fill: parent; active: root.cur === 5; opacity: active ? 1 : 0; visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } } }
         }
     }

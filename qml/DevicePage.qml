@@ -17,14 +17,36 @@ Flickable {
     property bool discover: true
     property var test: null
     property bool testing: false
+    property var urls: []
+    property var tvs: []
+    property var tvStatus: ({})
+    Timer {
+        interval: 3000; repeat: true; running: page.active; triggeredOnStart: true
+        onTriggered: {
+            var m = {}, d = JSON.parse(bridge.snapshot()).devices || []
+            for (var i = 0; i < d.length; i++) m[d[i].host] = d[i]
+            page.tvStatus = m
+        }
+    }
+    function addTv() {
+        var parts = hosts.text.split(/[\s,;]+/), t = tvs.slice()
+        for (var i = 0; i < parts.length; i++) {
+            var h = parts[i].trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "")
+            if (h && t.indexOf(h) < 0) t.push(h)
+        }
+        tvs = t; hosts.text = ""
+    }
+    function removeTv(i) { var t = tvs.slice(); t.splice(i, 1); tvs = t }
 
     function load() {
         var c = JSON.parse(bridge.deviceConfig())
         mode = Math.max(0, modes.indexOf(c.transport))
-        hosts.text = c.hosts
+        tvs = c.hosts.split(",").map(function (s) { return s.trim() }).filter(function (s) { return s.length > 0 })
+        hosts.text = ""
         discover = c.discover
         interval.text = String(c.pushInterval)
         servePort.text = String(c.servePort)
+        urls = JSON.parse(bridge.localUrls())
         serialPort.text = c.serialPort
         test = null
     }
@@ -50,7 +72,7 @@ Flickable {
                 text: "Save and apply"; kind: "primary"; glyph: ""
                 onClicked: {
                     bridge.applyDevice(JSON.stringify({
-                        transport: page.modes[page.mode], hosts: hosts.text, discover: page.discover,
+                        transport: page.modes[page.mode], hosts: (function () { addTv(); return page.tvs.join(", ") })(), discover: page.discover,
                         pushInterval: parseInt(interval.text) || 20, servePort: parseInt(servePort.text) || 8787,
                         serialPort: serialPort.text }))
                     page.app.toast("Applied", "good")
@@ -87,15 +109,29 @@ Flickable {
             ColumnLayout {
                 width: parent.width; spacing: 12
                 Text { text: "TV address"; color: Theme.text; font.family: Theme.font; font.pixelSize: 16; font.weight: Font.DemiBold }
-                Text { text: "An IP address or name. Separate several TVs with commas."; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13 }
+                Text { text: "Every TV in this list gets the same numbers."; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13 }
+                Repeater {
+                    model: page.tvs
+                    delegate: RowLayout {
+                        Layout.fillWidth: true; spacing: 10
+                        readonly property var st: page.tvStatus[modelData] || null
+                        Text { Layout.fillWidth: true; text: modelData; color: Theme.text; font.family: Theme.mono; font.pixelSize: 14 }
+                        Chip {
+                            text: st && st.detail === "phone" ? "Phone is sending" : st && st.ok && st.detail === "takeover" ? "Sending (phone failed)" : !st || st.ok === null ? "Waiting" : (st.ok ? "Sent " + Math.round(st.age) + " s ago" : "Not answering")
+                            tone: st && st.detail === "phone" ? "info" : !st || st.ok === null ? "neutral" : (st.ok ? "good" : "bad")
+                        }
+                        Btn { text: ""; glyph: "\uE1B2"; kind: "ghost"; onClicked: page.removeTv(index) }
+                    }
+                }
                 RowLayout {
                     Layout.fillWidth: true; spacing: 10
-                    Field { id: hosts; Layout.fillWidth: true; mono: true; placeholderText: "192.168.1.48" }
+                    Field { id: hosts; Layout.fillWidth: true; mono: true; placeholderText: "192.168.1.48"; onAccepted: page.addTv() }
+                    Btn { text: "Add"; glyph: "\uE13D"; onClicked: page.addTv() }
                     Btn {
-                        text: "Test"; busy: page.testing; glyph: ""
+                        text: "Test"; busy: page.testing; glyph: "\uE0E8"
                         onClicked: {
                             page.test = null; page.testing = true
-                            bridge.testDevice(hosts.text.split(",")[0])
+                            bridge.testDevice(hosts.text.trim() !== "" ? hosts.text.split(/[\s,;]+/)[0] : (page.tvs[0] || ""))
                         }
                     }
                 }
@@ -141,6 +177,13 @@ Flickable {
                         Text { text: "Your system may ask to allow this port through the firewall."; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12 }
                     }
                     Field { id: servePort; Layout.preferredWidth: 100; mono: true; inputMethodHints: Qt.ImhDigitsOnly; maximumLength: 5; horizontalAlignment: TextInput.AlignHCenter }
+                }
+                Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
+                Text { text: "Address for the phone app"; color: Theme.text; font.family: Theme.font; font.pixelSize: 14; font.weight: Font.Medium }
+                Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Type the one that starts like your phone's own address. Save and apply first, and allow it through the firewall if asked."; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 12 }
+                Repeater {
+                    model: page.urls
+                    delegate: Text { text: modelData; color: Theme.accent; font.family: Theme.mono; font.pixelSize: 14; font.weight: Font.DemiBold }
                 }
             }
         }

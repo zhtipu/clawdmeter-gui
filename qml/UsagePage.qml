@@ -63,7 +63,7 @@ Flickable {
                     Text { text: "Usage is not available"; color: Theme.text; font.family: Theme.font; font.pixelSize: 15; font.weight: Font.DemiBold }
                     Text { Layout.fillWidth: true; text: s.status; wrapMode: Text.WordWrap; color: Theme.textDim; font.family: Theme.font; font.pixelSize: 13 }
                 }
-                Btn { text: "Set up Claude Code"; kind: "primary"; onClicked: page.app.go(3) }
+                Btn { text: "Set up Claude Code"; kind: "primary"; onClicked: page.app.go(4) }
             }
         }
 

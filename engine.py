@@ -138,8 +138,30 @@ class State:
         self.hid_enabled = True
         self.status_key = ""        # ok | error | searching, set by the poller
         self.push_results: dict = {}   # url -> (ok: bool, unix time, detail)
+        self.takeover: dict = {}       # tv host -> unix time until which this computer sends instead of a phone that failed
+        self.clients: dict = {}        # ip -> {name, link, first, last, count}, phones that fetched in serve mode
         self.stop_event = threading.Event()
         self.refresh_event = threading.Event()
+
+    CLIENT_LIVE_S = 90
+
+    def phone_owners(self) -> dict:
+        """TV host -> phone address that is sending to it. One sender per TV: the phone seen first keeps it while it is live."""
+        now = time.time()
+        with self.lock:
+            live = sorted((c["first"], ip, c) for ip, c in self.clients.items() if now - c["last"] <= self.CLIENT_LIVE_S)
+        owners: dict = {}
+        for _, ip, c in live:
+            for h in c.get("tvs", ()):
+                if not self.taken_over(h):
+                    owners.setdefault(h, ip)
+        return owners
+
+    TAKEOVER_S = 300
+
+    def taken_over(self, host: str) -> bool:
+        with self.lock:
+            return self.takeover.get(host, 0) > time.time()
 
     def set_status(self, status: str, port: str | None = ..., key: str = "") -> None:
         with self.lock:
@@ -368,6 +390,13 @@ def serial_loop(stop: threading.Event, explicit_port: str | None) -> None:
 
 # ---- Transport: HTTP server (device pulls) --------------------------------
 
+def norm_host(raw: str) -> str:
+    """"http://192.168.0.31:80/x" -> "192.168.0.31", for comparing the TV a phone sends to with the TV this computer sends to."""
+    v = raw.strip().lower()
+    v = v.split("://", 1)[-1].split("/", 1)[0]
+    return v.rsplit(":", 1)[0] if v.count(":") == 1 else v
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body: dict):
         data = json.dumps(body, separators=(",", ":")).encode()
@@ -385,7 +414,41 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.rstrip("/") in ("/healthz", "/health"):
             self._send(200, {"ok": True})
             return
-        self._send(200, state.get_payload())
+        ip = self._note_client()
+        body = dict(state.get_payload())
+        mine = state.clients.get(ip, {}).get("tvs", ())
+        owners = state.phone_owners()
+        # TVs this phone must leave alone: another phone feeds them, or this computer took them over after the phone failed
+        body["skip"] = sorted(h for h in mine if owners.get(h, ip) != ip or state.taken_over(h))
+        self._send(200, body)
+
+    def _note_client(self):
+        ip = self.client_address[0]
+        name = self.headers.get("X-Clawdmeter-Device", "")[:60].strip()
+        link = self.headers.get("X-Clawdmeter-Link", "").strip().lower()
+        if link not in ("wifi", "bluetooth", "ethernet", "cellular"):
+            link = "network"
+        tvs = {norm_host(t) for t in self.headers.get("X-Clawdmeter-Tvs", "").split(",") if t.strip()}
+        now = time.time()
+        with state.lock:
+            c = state.clients.setdefault(ip, {"first": now, "count": 0})
+            if now - c.get("last", now) > state.CLIENT_LIVE_S:
+                c["first"] = now                      # came back after a gap: it no longer outranks phones that stayed
+            c.update(name=name or c.get("name", ""), link=link, last=now, tvs=tvs)
+            c["count"] += 1
+        report = {}
+        for part in self.headers.get("X-Clawdmeter-Tv-Status", "").split(","):
+            h, _, v = part.partition("=")
+            if h.strip() and v.strip() in ("ok", "fail"):
+                report[norm_host(h)] = v.strip()
+        with state.lock:
+            c["tvok"] = report
+        for h, v in report.items():              # the phone says it could not reach a TV it was feeding: this computer takes over
+            if v == "fail" and h in tvs and not state.taken_over(h):
+                with state.lock:
+                    state.takeover[h] = now + state.TAKEOVER_S
+                log(f"Phone {ip} could not reach {h}; sending from this computer for {state.TAKEOVER_S // 60} min")
+        return ip
 
     def log_message(self, *args):
         pass
@@ -510,7 +573,13 @@ def push_loop(stop: threading.Event, targets_fn, interval: float) -> None:
         urls = targets_fn()
         state.push_target = ", ".join(urls)
         if payload.get("ok") and urls:
+            owners = state.phone_owners()
             for url in urls:
+                if norm_host(url) in owners:        # a phone is already sending to this TV, so only one sender talks to it
+                    state.push_results[url] = (None, time.time(), "phone")
+                    ok_urls.discard(url)
+                    continue
+                took = state.taken_over(norm_host(url))
                 try:
                     r = httpx.post(url, json=payload, timeout=10.0)
                     if r.status_code >= 400:
@@ -518,7 +587,7 @@ def push_loop(stop: threading.Event, targets_fn, interval: float) -> None:
                         state.push_results[url] = (False, time.time(), f"HTTP {r.status_code}")
                         ok_urls.discard(url)
                     else:
-                        state.push_results[url] = (True, time.time(), "")
+                        state.push_results[url] = (True, time.time(), "takeover" if took else "")
                         if url not in ok_urls:
                             log(f"Pushing to {url} OK")
                             ok_urls.add(url)
@@ -548,6 +617,9 @@ class Transports:
         self._stop = None        # per-transport stop event for the running thread
         self._server = None      # ThreadingHTTPServer while serving
         self._discovery = None   # mDNS Discovery while pushing
+        self._phone = None       # ThreadingHTTPServer for the phone app when the main transport is not serve
+        self._phone_port = None
+        self._advert = None      # (Zeroconf, ServiceInfo) while the phone server or serve mode is advertised
 
     def select(self, name: str) -> None:
         if name not in self.NAMES:
@@ -631,6 +703,97 @@ class Transports:
             self._teardown()          # clears self.active so select() will proceed
             self.select(active)
 
+    def _local_ips(self) -> list:
+        import socket
+        ips = []
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("192.0.2.1", 9))
+            ips.append(s.getsockname()[0])
+            s.close()
+        except OSError:
+            pass
+        try:
+            ips += socket.gethostbyname_ex(socket.gethostname())[2]
+        except OSError:
+            pass
+        out = []
+        for ip in ips:
+            if not ip.startswith(("127.", "169.254.")) and ip not in out:
+                out.append(ip)
+        return out
+
+    def _sync_advert(self) -> None:
+        """Announce this computer on the local network so the phone app can find it. Needs zeroconf; silent without it."""
+        want = bool(self.cfg.get("phone_serve")) or self.active == "serve"
+        port = int(self.cfg.get("serve_port", DEFAULT_PORT))
+        if self._advert is not None:
+            zc, info = self._advert
+            if want and info.port == port:
+                return
+            try:
+                zc.unregister_service(info)
+                zc.close()
+            except Exception:
+                pass
+            self._advert = None
+        if not want:
+            return
+        try:
+            import socket
+            from zeroconf import Zeroconf, ServiceInfo
+            ips = self._local_ips()
+            if not ips:
+                return
+            host = socket.gethostname().split(".")[0] or "computer"
+            info = ServiceInfo("_clawdmeter-pc._tcp.local.", f"{host} (Clawdmeter)._clawdmeter-pc._tcp.local.",
+                               addresses=[socket.inet_aton(i) for i in ips], port=port,
+                               properties={"name": host}, server=f"{host}-clawdmeter.local.")
+            zc = Zeroconf()
+            zc.register_service(info)
+            self._advert = (zc, info)
+        except Exception as e:
+            log(f"advertise failed: {type(e).__name__}")
+
+    def sync_phone(self) -> str:
+        """Run the small server the phone app reads from, independent of how the TVs are fed.
+        Returns "" when fine or a short error. When the main transport is already serve it covers the phone too."""
+        with self.lock:
+            want = bool(self.cfg.get("phone_serve")) and self.active != "serve"
+            port = int(self.cfg.get("serve_port", DEFAULT_PORT))
+            if self._phone is not None and (not want or self._phone_port != port):
+                try:
+                    self._phone.shutdown()
+                    self._phone.server_close()
+                except Exception:
+                    pass
+                self._phone = None
+            if want and self._phone is None:
+                try:
+                    self._phone = ThreadingHTTPServer((self.cfg.get("serve_host", DEFAULT_HOST), port), Handler)
+                except OSError as e:
+                    log(f"phone server bind failed: {e}")
+                    return f"Port {port} is busy: {e}"
+                self._phone_port = port
+                threading.Thread(target=self._phone.serve_forever, daemon=True).start()
+                log(f"Phone server on port {port}")
+            self._sync_advert()
+            return ""
+
     def shutdown(self) -> None:
         with self.lock:
             self._teardown()
+            if self._phone is not None:
+                try:
+                    self._phone.shutdown()
+                    self._phone.server_close()
+                except Exception:
+                    pass
+                self._phone = None
+            if self._advert is not None:
+                try:
+                    self._advert[0].unregister_service(self._advert[1])
+                    self._advert[0].close()
+                except Exception:
+                    pass
+                self._advert = None

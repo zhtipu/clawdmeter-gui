@@ -17,6 +17,7 @@ TabBar 1.0 TabBar.qml
 Gauge 1.0 Gauge.qml
 UsagePage 1.0 UsagePage.qml
 DevicePage 1.0 DevicePage.qml
+PhonePage 1.0 PhonePage.qml
 AccountPage 1.0 AccountPage.qml
 SettingsPage 1.0 SettingsPage.qml
 UTabs 1.0 TabBar.qml

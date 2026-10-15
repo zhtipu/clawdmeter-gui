@@ -59,7 +59,7 @@ fid = QFontDatabase.addApplicationFont(os.path.join(HERE, "assets", "fonts", "lu
 check("icon font loads", fid >= 0 and "lucide" in QFontDatabase.applicationFontFamilies(fid))
 shot = os.path.join(tmp, "ui.png")
 env = dict(os.environ, QT_QUICK_BACKEND="software")
-for page in (0, 2, 4):
+for page in (0, 2, 3, 5):
     out = shot.replace(".png", f"{page}.png")
     p = subprocess.run([sys.executable, os.path.join(HERE, "main.py"), "--page", str(page), "--shot", out, "--delay", "2500"],
                        capture_output=True, text=True, env=env, timeout=120)
