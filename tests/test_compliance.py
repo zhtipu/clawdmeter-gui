@@ -10,7 +10,7 @@ FORBIDDEN = [
     "refresh_token", "access_token", "accessToken", "refreshToken", "keyring", "keychain", "Keychain",
 ]
 EXTENSIONS = (".py", ".qml", ".js", ".sh", ".yml", ".bat", ".txt")
-SKIP_DIRS = {"tests", "build", "dist", ".git", ".venv-mac", "__pycache__", "shots", "themes"}
+SKIP_DIRS = {"tests", "build", "dist", ".git", ".venv", ".venv-mac", "venv", "__pycache__", "shots", "themes", "node_modules"}
 SKIP_FILES = {"LUCIDE-LICENSE.txt", "LICENSE-clawdmeter-daemon"}
 
 hits = []
