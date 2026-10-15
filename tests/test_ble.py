@@ -119,4 +119,7 @@ class FakeLink(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    result = unittest.main(exit=False).result
+    failures = len(result.failures) + len(result.errors)
+    print("FAILURES:", failures)          # the line ci_check.py looks for, like the other test scripts
+    sys.exit(1 if failures else 0)
