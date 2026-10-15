@@ -64,6 +64,14 @@ check("garbage gives zero", u.minutes_until("soon", NOW) == 0)
 check("ok", u.classify(REAL, 0).kind == "ok")
 check("signed out", u.classify("Not logged in · Please run /login", 1).kind == "signed_out")
 check("api key login", u.classify("You are currently using API key billing. Usage limits are for subscriptions.", 0).kind == "no_limits")
+COST = """Total cost:            $0.0000
+Total duration (API):  0s
+Total duration (wall): 0s
+Total code changes:    0 lines added, 0 lines removed
+Usage:                 0 input, 0 output, 0 cache read, 0 cache write
+"""
+r = u.classify(COST, 0)
+check("signed-out cost summary is explained", r.kind == "no_limits" and "Sign in" in r.message, r)
 check("crash", u.classify("", 3).kind == "fail")
 check("odd output", u.classify("something else entirely", 0).kind == "fail")
 

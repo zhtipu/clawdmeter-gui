@@ -108,6 +108,9 @@ def classify(text: str, exit_code: int) -> Result:
     if payload:
         return Result("ok", payload=payload)
     low = text.lower()
+    # Signed out (or on an API key), `-p /usage` prints this session cost summary instead of the limits.
+    if re.search(r"total cost:|total duration \(api\)", low):
+        return Result("no_limits", "Claude Code is not signed in with a Claude subscription, so it shows costs instead of usage limits. Sign in on this page.")
     if re.search(r"not logged in|please (run )?/?login|/login|sign in|log in|authentication", low):
         return Result("signed_out", "Not signed in to Claude Code. Sign in on the Account page.")
     if "subscription" in low or "api key" in low or "usage limits" in low:
