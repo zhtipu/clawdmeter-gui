@@ -1,0 +1,73 @@
+name: Build macOS app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  mac:
+    name: macOS ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest          # Apple Silicon
+            label: arm64
+            optional: false
+          - os: macos-15-intel        # Intel Macs
+            label: x86_64
+            optional: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Self-check (logic, login item, keychain, theme patch, every page renders)
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+          SHOT_DIR: ${{ runner.temp }}/shots
+        run: python ci_check.py
+
+      - name: Build the app and the disk image
+        env:
+          USE_VENV: "0"
+          SKIP_CHECK: "1"
+        run: bash build_mac.sh
+
+      - name: Start the built app once and take a screenshot
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          mkdir -p "${{ runner.temp }}/shots"
+          timeout 90 dist/Clawdmeter.app/Contents/MacOS/Clawdmeter --page 0 --shot "${{ runner.temp }}/shots/built-app.png" --delay 5000
+          test -s "${{ runner.temp }}/shots/built-app.png"
+
+      - name: Zip the app too
+        run: ditto -c -k --keepParent dist/Clawdmeter.app dist/Clawdmeter-${{ matrix.label }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clawdmeter-macOS-${{ matrix.label }}
+          path: |
+            dist/Clawdmeter.dmg
+            dist/Clawdmeter-${{ matrix.label }}.zip
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-${{ matrix.label }}
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore
