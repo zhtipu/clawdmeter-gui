@@ -571,6 +571,13 @@ class Discovery:
         self._browser = None
 
 
+def _tv_accepted(body: str) -> bool:
+    try:
+        return json.loads(body).get("ok") is True
+    except (ValueError, AttributeError):
+        return False
+
+
 def push_loop(stop: threading.Event, targets_fn, interval: float) -> None:
     """POST the latest payload to every current target each interval.
 
@@ -595,9 +602,11 @@ def push_loop(stop: threading.Event, targets_fn, interval: float) -> None:
                 took = state.taken_over(norm_host(url))
                 try:
                     r = httpx.post(url, json=payload, timeout=10.0)
-                    if r.status_code >= 400:
-                        log(f"Push {url} HTTP {r.status_code}")
-                        state.push_results[url] = (False, time.time(), f"HTTP {r.status_code}")
+                    if r.status_code != 200 or not _tv_accepted(r.text):
+                        # a real SmallTV answers 200 with {"ok":true}; a router page or another device is not the TV
+                        why = "That address is not the SmallTV" if r.status_code in (200, 301, 302, 303, 307, 308) else f"HTTP {r.status_code}"
+                        log(f"Push {url}: {why}")
+                        state.push_results[url] = (False, time.time(), why)
                         ok_urls.discard(url)
                     else:
                         state.push_results[url] = (True, time.time(), "takeover" if took else "")
